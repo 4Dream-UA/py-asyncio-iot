@@ -1,20 +1,24 @@
 import time
 import asyncio
+from typing import Awaitable, Any
 
 from iot.devices import HueLightDevice, SmartSpeakerDevice, SmartToiletDevice
 from iot.message import Message, MessageType
 from iot.service import IOTService
 
-async def run_sequence(service: IOTService, messages: list[Message]) -> None:
-    """Виконує команди строго одна за одною."""
-    for msg in messages:
-        await service.send_msg(msg)
 
-async def run_parallel(service: IOTService, messages: list[Message]) -> None:
+async def run_sequence(*functions: Awaitable[Any]) -> None:
+    """Виконує команди строго одна за одною."""
+    for func in functions:
+        await func
+
+
+async def run_parallel(*functions: Awaitable[Any]) -> None:
     """Виконує всі команди одночасно."""
     async with asyncio.TaskGroup() as tg:
-        for msg in messages:
-            tg.create_task(service.send_msg(msg))
+        for func in functions:
+            tg.create_task(func)
+
 
 async def main() -> None:
     service = IOTService()
@@ -32,22 +36,24 @@ async def main() -> None:
     speaker_id = task2.result()
     toilet_id = task3.result()
 
-    await run_parallel(service, [
-        Message(hue_light_id, MessageType.SWITCH_ON),
-        Message(speaker_id, MessageType.SWITCH_ON)
-    ])
-    await run_sequence(service, [
-        Message(speaker_id, MessageType.PLAY_SONG, "Rick Astley - Never Gonna Give You Up")
-    ])
+    await run_parallel(
+        service.send_msg(Message(hue_light_id, MessageType.SWITCH_ON)),
+        service.send_msg(Message(speaker_id, MessageType.SWITCH_ON))
+    )
 
-    await run_sequence(service, [
-        Message(toilet_id, MessageType.FLUSH),
-        Message(toilet_id, MessageType.CLEAN)
-    ])
-    await run_parallel(service, [
-        Message(hue_light_id, MessageType.SWITCH_OFF),
-        Message(speaker_id, MessageType.SWITCH_OFF)
-    ])
+    await run_sequence(
+        service.send_msg(Message(speaker_id, MessageType.PLAY_SONG, "Rick Astley - Never Gonna Give You Up"))
+    )
+
+    await run_sequence(
+        service.send_msg(Message(toilet_id, MessageType.FLUSH)),
+        service.send_msg(Message(toilet_id, MessageType.CLEAN))
+    )
+
+    await run_parallel(
+        service.send_msg(Message(hue_light_id, MessageType.SWITCH_OFF)),
+        service.send_msg(Message(speaker_id, MessageType.SWITCH_OFF))
+    )
 
 
 if __name__ == "__main__":
